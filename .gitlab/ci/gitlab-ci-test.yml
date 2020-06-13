@@ -1,0 +1,161 @@
+variables:
+  ENABLE_PHPUNIT: "false"
+
+phpcpd:
+  stage: test
+  image: edbizarro/gitlab-ci-pipeline-php:7.3
+  dependencies:
+    - composer
+  script:
+    - test -f phpcpd.phar || curl -L https://phar.phpunit.de/phpcpd.phar -o phpcpd.phar 
+    - php phpcpd.phar app/ --min-lines=50
+  cache:
+    paths:
+      - phpcpd.phar
+  rules:
+  - if: '$CI_COMMIT_BRANCH == "master"'
+    when: never
+  - if: '$CI_MERGE_REQUEST_IID'
+    when: always
+
+phpunit:
+  stage: test
+  image: edbizarro/gitlab-ci-pipeline-php:7.3-alpine
+  dependencies:
+    - composer
+  script:
+    - echo  "Building code"
+    - php -v
+    - ./vendor/bin/phpunit --version
+    - php -d short_open_tag=off ./vendor/bin/phpunit -v --colors=never --stderr
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      when: never
+    - if: $CI_MERGE_REQUEST_IID && 
+          $ENABLE_PHPUNIT == 'true'
+      when: always
+
+#phpunit:
+#    stage: test
+#    image: edbizarro/gitlab-ci-pipeline-php:7.3-alpine
+#    # Download the artifacts for these jobs
+#    dependencies:
+#      - composer
+#    script:
+#      - echo  "Building code"
+#      - php -v
+#      - sudo cp /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini /usr/local/etc/php/conf.d/docker-php-ext-xdebug.bak
+#      - echo "" | sudo tee /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini
+#      - ./vendor/phpunit/phpunit/phpunit --version
+#      - php -d short_open_tag=off ./vendor/phpunit/phpunit/phpunit -v --colors=never --stderr
+#      - sudo cp /usr/local/etc/php/conf.d/docker-php-ext-xdebug.bak /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini
+#    artifacts:
+#      paths:
+#        - ./storage/logs # for debugging
+#      expire_in: 1 days
+#      when: on_failure
+#    rules:
+#    - if: '$CI_COMMIT_BRANCH == "master"'
+#      when: never
+#    - if: '$CI_MERGE_REQUEST_IID'
+#      when: always
+#UnitTest:
+#  stage: test
+#  dependencies:
+#    - composer
+#  script: " Running unit code tests"
+#  rules:
+#    - if: '$CI_COMMIT_BRANCH == "master"'
+#      when: never
+#    - if: '$CI_MERGE_REQUEST_IID'
+#      when: always
+#
+#codestyle:
+#  stage: test
+#  dependencies:
+#    - composer
+#  image: lorisleiva/laravel-docker:latest
+#  script:
+#    - phpcs --standard=PSR2 --extensions=php app
+#  rules:
+#  - if: '$CI_COMMIT_BRANCH == "master"'
+#    when: never
+#  - if: '$CI_MERGE_REQUEST_IID'
+#    when: always
+#
+#test:php7:full-report:
+#  dependencies:
+#    - composer
+#  image: tetraweb/php:7.2
+#  stage: test
+#  artifacts:
+#    paths:
+#      - tests/_output/coverage
+#    expire_in: 1 month
+#  script:
+#    - do_run() { vendor/bin/codecept run --coverage=$1.cov $1; };
+#    - vendor/bin/codecept run acceptance
+#    - do_run api
+#    - do_run functional
+#    - do_run unit
+#    - vendor/bin/phpcov merge tests/_output --text=Coverage
+#    - vendor/bin/phpcov merge tests/_output --html=tests/_output/coverage
+#  rules:
+#   - if: '$CI_COMMIT_BRANCH == "master"'
+#     when: never
+#   - if: '$CI_MERGE_REQUEST_IID'
+#     when: always
+#   - if: '$VAR =~ /pattern/'
+#     when: manual 
+#
+#code_quality:
+#  stage: test 
+#  dependencies:
+#    - composer
+#  image: docker:stable
+#  services:
+#    - docker:stable-dind
+#  script:
+#    - code_quality
+#  artifacts:
+#    paths: [code-quality-report.json]
+#    expire_in: 2 week
+#  allow_failure: true
+#  rules:
+#   - if: '$CI_COMMIT_BRANCH == "master"'
+#     when: never
+#   - if: '$CI_MERGE_REQUEST_IID'
+#     when: always
+#   - if: '$CODE_QUALITY_DISABLED'
+#     when: manual 
+#
+#phpstan:
+#  stage: test
+#  dependencies:
+#    - composer
+#  script:
+#    - php artisan code:analyse
+#  artifacts:
+#    paths:
+#      - phpstan_results.txt
+#    expire_in: 2 week
+#  allow_failure: true
+#  rules:
+#   - if: '$CI_COMMIT_BRANCH == "master"'
+#     when: never
+#   - if: '$CI_MERGE_REQUEST_IID'
+#     when: always
+#   - if: '$CODE_QUALITY_DISABLED'
+#     when: never 
+#
+#      
+#StaticTest:
+#  stage: test
+#  dependencies:
+#    - composer
+#  script: " Running static code tests"
+#  rules:
+#    - if: '$CI_COMMIT_BRANCH == "master"'
+#      when: never
+#    - if: '$CI_MERGE_REQUEST_IID'
+#      when: always

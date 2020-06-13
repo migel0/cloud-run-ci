@@ -1,0 +1,22 @@
+
+sensiolabs:
+  stage: security
+  dependencies:
+    - composer
+  image: edbizarro/gitlab-ci-pipeline-php:7.3
+  script:
+    - test -d security-checker || git clone https://github.com/sensiolabs/security-checker.git
+    - cd security-checker
+    - composer install
+    - php security-checker security:check ../composer.lock  > ../security-checker-log.md
+  cache:
+    paths:
+      - security-checker/
+  artifacts:
+    reports:
+      junit: security-checker/security-checker-log.md
+  rules:
+  - if: '$CI_COMMIT_BRANCH == "master"'
+    when: never
+  - if: '$CI_MERGE_REQUEST_IID'
+    when: always

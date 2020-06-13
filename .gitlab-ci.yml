@@ -1,0 +1,305 @@
+stages:
+  - openMr
+  - buildcode
+  - test
+  - security
+  - build
+  - deploy
+  - rollback_int
+  - staging
+  - release
+  - verify
+  - test
+  - build_release
+  - deploy_release
+  - rollback_release
+
+
+
+variables:
+    PROJECTID: "proxecto"  
+    REGION: "rexion"
+    SACLOUDRUN: "service_account"
+  #Env vars
+    serviceint: "ms_int"
+    servicedes: "ms_des"
+    servicepro: "mv_pro"
+    image_name_int: "imaxe_int"
+    image_name_des: "imaxe_des"
+    image_name_pro: "imaxe_pro"
+    int_Cloudsql_instance: "string1"
+    pro_Cloudsql_instance: "string2"
+  #CI vars
+    GITLAB_FEATURES: "sast"
+    #CI_DEBUG_TRACE: "true"
+ 
+include:
+  - local: .gitlab/ci/global-ci.yml
+
+cache:
+  key: "$CI_JOB_NAME-$CI_COMMIT_REF_SLUG"
+
+
+workflow:
+  rules:
+    # For merge requests, create a pipeline.
+    - if: '$CI_MERGE_REQUEST_IID'
+    # For `master` branch, create a pipeline (this includes on schedules, pushes, merges, etc.).
+    - if: '$CI_COMMIT_BRANCH == "master"'
+    # For tags, create a pipeline.
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH =~   /^(release|feature|hotfix|bugfix)\/.*$/'
+
+
+.default-rules:
+  rules:
+    - if: '$CI_COMMIT_TAG || $RELEASE'
+      when: never
+    - if: '$RELEASE == null && $CI_JOB_NAME =~ /deploy/'
+      when: manual
+
+
+Openmergerequest:
+  stage: openMr
+  #extends:
+ #   - .vars_ext
+  variables:
+    GIT_STRATEGY: none # We do not need a clone of the GIT repository to create a Merge Request
+  script:
+   - echo  bash ./.gitlab/ci/merge-request.sh 
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]*/'
+      when: never
+    - if: '$CI_COMMIT_BRANCH =~   /^(feature|hotfix|bugfix)\/.*$/' 
+      when: always
+
+
+composer:
+    stage: buildcode
+    before_script:
+      - export PROJ_VER=$(jq -r '.version' composer.json)
+    script:
+      - echo "Launching composer install , $CI_PROJECT_NAME version-$PROJ_VER" 
+    artifacts:
+      paths:
+        - vendor/
+        - .env
+      expire_in: 30 min
+      when: always
+    cache:
+      paths:
+        - vendor/
+    rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      when: never
+    - if: '$CI_MERGE_REQUEST_IID'
+      when: always
+
+
+build_int:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  extends:
+    - .vars_ext
+  script:
+    - echo "Building image ${PROJ_VER}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master" '
+      when: always
+    
+    
+
+deployINT:
+  stage: deploy
+  dependencies:
+    - build_int
+  extends:
+    - .vars_ext
+  script:
+    - echo "Deploying image on integration env"
+  environment:
+    name: integration
+    on_stop: stop_integration
+    auto_stop_in: 2 day
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master" '
+      when: manual
+
+
+
+deployINT_2:
+  stage: deploy
+  extends:
+    - .vars_ext
+  script:
+    - echo "Deploying image on integration env"
+  environment:
+    name: integration
+    on_stop: stop_integration
+    auto_stop_in: 2 day
+  needs:
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master" '
+      when: manual
+
+
+
+stop_integration:
+  stage: rollback_int
+  dependencies:
+    - build_int
+    - deployINT
+  extends:
+    - .vars_ext
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - echo "stop_review app"  
+  environment:
+    name: integration
+    action: stop
+  needs:
+    - deployINT
+    - build_int
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      when: manual 
+
+
+
+check_version:
+  stage: release
+  extends: 
+    - .vars_ext
+  script:
+    - echo " CI_COMMIT_REF_NAME  -> $CI_COMMIT_REF_NAME "
+    - echo " CI_COMMIT_BRANCH   -> $CI_COMMIT_BRANCH "
+    - echo " CI_COMMIT_TAG ->          $CI_COMMIT_TAG  "
+    - echo "####################################################################"
+    - bash .gitlab/ci/tag.sh
+    - export ACTBRANCH=$(git branch --show-current | cut -d '/' -f 1)
+    - echo  $ACTBRANCH
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]*/'
+      when: always
+
+release_tests:
+  stage: verify
+  dependencies:
+    - check_version
+  extends:
+    - .vars_ext
+  script:
+    - echo 'release_tests '
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]*/'
+      when: on_success
+      when: manual
+
+
+build_int_release:
+  stage: build_release
+  dependencies:
+    - release_tests
+  extends:
+    - .vars_ext
+  script:
+    - echo 'echo "Building image ${PROJ_VER}"'
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]*/'
+      when: on_success
+      when: manual
+
+build_pro_release:
+  stage: build_release
+  dependencies:
+    - release_tests
+  extends:
+    - .vars_ext
+  script:
+    - echo 'echo "Building image ${PROJ_VER}"'
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]*/'
+      when: on_success
+      when: manual
+
+
+
+Deploy_int_release:
+  stage: deploy_release
+  extends:
+   - .vars_ext
+  dependencies:
+    - build_int_release
+  script:
+    - echo "Deploying image on integration env"
+  environment:
+    name: integration
+    on_stop: stop_release_int
+    auto_stop_in: 2 day
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]*/'
+      when: on_success
+      when: manual
+
+
+Deploy_pro_release:
+  stage: deploy_release
+  extends:
+   - .vars_ext
+  dependencies:
+    - build_pro_release
+  script:
+    - echo "Deploying image on integration env"
+  environment:
+    name: production
+    on_stop: stop_production
+    auto_stop_in: 2 day
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]*/'
+      when: on_success
+      when: manual
+
+
+stop_release_int:
+  stage: rollback_release
+  dependencies:
+    - Deploy_int_release
+  extends:
+    - .vars_ext
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - echo "stop_review app"  
+  environment:
+    name: integration
+    action: stop
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]*/'
+      when: on_success
+      when: manual
+ 
+
+stop_production:
+  stage: rollback_release
+  dependencies:
+    - Deploy_pro_release
+  extends:
+   - .vars_ext
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - echo "stop_review app"
+  environment:
+    name: production
+    action: stop
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~   /^(feature|hotfix|bugfix)\/.*$/'
+      when: never
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]*/'
+      when: on_success
+      when: manual
+

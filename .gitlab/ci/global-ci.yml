@@ -1,0 +1,7 @@
+.vars_ext:
+ before_script:
+    - echo " ---------- EXTENDS -----------"
+
+
+
+
